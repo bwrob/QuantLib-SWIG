@@ -18,6 +18,10 @@
 
 import sys
 if sys.platform == "emscripten":
+    # In Pyodide's WebAssembly dynamic linking runtime, C++ exceptions thrown
+    # from dynamically loaded extension modules dispatch __cxa_throw through
+    # function table slot 0. Registering ___cxa_throw in wasmTableMirror[0]
+    # ensures C++ exceptions properly translate to Python exceptions.
     try:
         import pyodide_js
         _m = getattr(pyodide_js, "_module", None)
