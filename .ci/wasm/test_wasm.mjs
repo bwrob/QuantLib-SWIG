@@ -9,8 +9,8 @@ async function main() {
     console.log("Loading Pyodide runtime...");
     const pyodide = await loadPyodide();
 
-    // Look for wheel in Python/dist/
-    const distDir = path.resolve(__dirname, "../../Python/dist");
+    // Look for wheel in CLI argument, WHEEL_DIR env var, or Python/dist/
+    const distDir = process.argv[2] ? path.resolve(process.argv[2]) : (process.env.WHEEL_DIR ? path.resolve(process.env.WHEEL_DIR) : path.resolve(__dirname, "../../Python/dist"));
     const files = fs.readdirSync(distDir).filter(f => f.endsWith(".whl") && (f.includes("emscripten") || f.includes("wasm32")));
     if (files.length === 0) {
         throw new Error(`No WASM wheel found in ${distDir}`);
