@@ -16,6 +16,16 @@
  FOR A PARTICULAR PURPOSE.  See the license for more details.
 """
 
+import sys
+if sys.platform == "emscripten":
+    try:
+        import pyodide_js
+        _m = getattr(pyodide_js, "_module", None)
+        if _m and hasattr(_m, "wasmTableMirror") and hasattr(_m, "___cxa_throw"):
+            _m.wasmTableMirror[0] = _m.___cxa_throw
+    except Exception:
+        pass
+
 from .QuantLib import *
 from . import _QuantLib
 

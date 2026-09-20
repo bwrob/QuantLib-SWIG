@@ -1,0 +1,167 @@
+import { loadPyodide } from "pyodide";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+async function main() {
+    console.log("Loading Pyodide runtime...");
+    const pyodide = await loadPyodide();
+
+    // Look for wheel in Python/dist/
+    const distDir = path.resolve(__dirname, "../../Python/dist");
+    const files = fs.readdirSync(distDir).filter(f => f.endsWith(".whl") && (f.includes("emscripten") || f.includes("wasm32")));
+    if (files.length === 0) {
+        throw new Error(`No WASM wheel found in ${distDir}`);
+    }
+
+    const wheelName = files[0];
+    const wheelPath = path.join(distDir, wheelName);
+    console.log(`Found WASM wheel: ${wheelName}`);
+
+    const wheelBuffer = fs.readFileSync(wheelPath);
+    pyodide.FS.writeFile(`/${wheelName}`, wheelBuffer);
+
+    console.log("Loading micropip...");
+    await pyodide.loadPackage("micropip");
+    const micropip = pyodide.pyimport("micropip");
+    console.log("Installing QuantLib wheel in Pyodide...");
+    await micropip.install(`emfs:/${wheelName}`);
+
+    console.log("\n================ Running QuantLib WASM Verification ================\n");
+
+    const pythonCode = `
+import QuantLib as ql
+import sys
+
+print(f"QuantLib Version: {ql.__version__}")
+print(f"QuantLib Hex Version: {hex(ql.__hexversion__)}")
+print(f"Python Platform: {sys.platform}")
+
+# 1. Date & Calendar test
+d1 = ql.Date(20, ql.September, 2026)
+cal = ql.TARGET()
+print(f"Date: {d1}, Is business day: {cal.isBusinessDay(d1)}")
+d2 = cal.advance(d1, 2, ql.Days)
+print(f"Advanced 2 business days: {d2}")
+
+# 2. DayCounter test
+dc = ql.Actual365Fixed()
+year_fraction = dc.yearFraction(d1, d2)
+print(f"Year fraction ({d1} to {d2}): {year_fraction}")
+
+# 3. European Option Pricing Test
+today = ql.Date(15, ql.May, 1998)
+ql.Settings.instance().evaluationDate = today
+
+settlement_date = today + 2
+maturity = today + 360
+
+payoff = ql.PlainVanillaPayoff(ql.Option.Call, 100.0)
+exercise = ql.EuropeanExercise(maturity)
+european_option = ql.VanillaOption(payoff, exercise)
+
+underlying = ql.SimpleQuote(100.0)
+flat_forward = ql.FlatForward(settlement_date, 0.05, ql.Actual365Fixed())
+flat_dividend = ql.FlatForward(settlement_date, 0.01, ql.Actual365Fixed())
+flat_vol = ql.BlackConstantVol(settlement_date, ql.TARGET(), 0.20, ql.Actual365Fixed())
+
+risk_free_ts = ql.YieldTermStructureHandle(flat_forward)
+dividend_ts = ql.YieldTermStructureHandle(flat_dividend)
+vol_ts = ql.BlackVolTermStructureHandle(flat_vol)
+underlying_handle = ql.QuoteHandle(underlying)
+
+bsm_process = ql.BlackScholesMertonProcess(
+    underlying_handle, dividend_ts, risk_free_ts, vol_ts
+)
+
+engine = ql.AnalyticEuropeanEngine(bsm_process)
+european_option.setPricingEngine(engine)
+
+npv = european_option.NPV()
+delta = european_option.delta()
+gamma = european_option.gamma()
+vega = european_option.vega()
+
+print(f"\\nBlack-Scholes European Call Results:")
+print(f"  NPV:   {npv:.6f}")
+print(f"  Delta: {delta:.6f}")
+print(f"  Gamma: {gamma:.6f}")
+print(f"  Vega:  {vega:.6f}")
+
+assert abs(npv - 9.715971) < 1e-4, f"Unexpected NPV: {npv}"
+print("Option pricing verification: PASSED")
+
+# 4. Vanilla Interest Rate Swap Test
+nominal = 1000000.0
+fixed_rate = 0.04
+calendar = ql.TARGET()
+settlement_days = 2
+start_date = calendar.advance(today, settlement_days, ql.Days)
+maturity_date = calendar.advance(start_date, 5, ql.Years)
+
+fixed_schedule = ql.Schedule(
+    start_date, maturity_date, ql.Period(ql.Annual), calendar,
+    ql.ModifiedFollowing, ql.ModifiedFollowing, ql.DateGeneration.Forward, False
+)
+float_schedule = ql.Schedule(
+    start_date, maturity_date, ql.Period(ql.Semiannual), calendar,
+    ql.ModifiedFollowing, ql.ModifiedFollowing, ql.DateGeneration.Forward, False
+)
+
+euribor_index = ql.Euribor6M(risk_free_ts)
+swap = ql.VanillaSwap(
+    ql.VanillaSwap.Payer, nominal,
+    fixed_schedule, fixed_rate, ql.Thirty360(ql.Thirty360.BondBasis),
+    float_schedule, euribor_index, 0.0, ql.Actual360()
+)
+swap_engine = ql.DiscountingSwapEngine(risk_free_ts)
+swap.setPricingEngine(swap_engine)
+
+swap_npv = swap.NPV()
+fair_rate = swap.fairRate()
+print(f"\\n5Y Vanilla Swap Results:")
+print(f"  Swap NPV:  {swap_npv:.2f}")
+print(f"  Fair Rate: {fair_rate:.4%}")
+assert abs(fair_rate - 0.0494) < 0.01, f"Unexpected fair rate: {fair_rate}"
+print("Swap pricing verification: PASSED")
+
+# 5. Fixed Rate Bond Test
+issue_date = start_date
+bond_schedule = ql.Schedule(
+    issue_date, maturity_date, ql.Period(ql.Semiannual), calendar,
+    ql.Unadjusted, ql.Unadjusted, ql.DateGeneration.Backward, False
+)
+coupons = [0.045]
+bond = ql.FixedRateBond(settlement_days, 100.0, bond_schedule, coupons, ql.ActualActual(ql.ActualActual.ISMA))
+bond_engine = ql.DiscountingBondEngine(risk_free_ts)
+bond.setPricingEngine(bond_engine)
+
+clean_price = bond.cleanPrice()
+dirty_price = bond.dirtyPrice()
+print(f"\\nFixed Rate Bond Results:")
+print(f"  Clean Price: {clean_price:.4f}")
+print(f"  Dirty Price: {dirty_price:.4f}")
+assert abs(clean_price - 97.8) < 1.0, f"Unexpected bond clean price: {clean_price}"
+print("Bond pricing verification: PASSED")
+
+# 6. Exception Handling Test (C++ -> Python exception translation across WASM)
+try:
+    bad_date = ql.Date(32, 1, 2026)
+    print("FAILED: Exception was not raised for invalid date")
+    sys.exit(1)
+except RuntimeError as e:
+    print(f"\\nC++ Exception properly caught in Python: {e}")
+    print("Exception handling verification: PASSED")
+
+print("\\nALL QUANTLIB WASM TESTS (Options, Swaps, Bonds, Exceptions) PASSED SUCCESSFULLY! 🎉")
+`;
+
+    await pyodide.runPythonAsync(pythonCode);
+}
+
+main().catch(err => {
+    console.error("Test execution failed:", err);
+    process.exit(1);
+});

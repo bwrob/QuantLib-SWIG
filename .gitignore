@@ -51,3 +51,7 @@ testCaseCollection.xml
 *.pch
 *.idb
 *.ipch
+.venv/
+node_modules/
+dist/
+build/
