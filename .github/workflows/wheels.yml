@@ -435,7 +435,7 @@ jobs:
       run: |
         tar xfz QuantLib-${{ needs.detect-version.outputs.version }}.tar.gz
         tar xfz QuantLib-SWIG-${{ needs.detect-version.outputs.version }}.tar.gz
-    - name: Build QuantLib C++ for WebAssembly
+    - name: Build QuantLib
       run: |
         VERSION="${{ needs.detect-version.outputs.version }}"
         QL_DIR="${GITHUB_WORKSPACE}/QuantLib-${VERSION}"
@@ -462,7 +462,7 @@ jobs:
           -DCMAKE_CXX_FLAGS="-fexceptions -O3 -DNDEBUG"
 
         cmake --build "${QL_DIR}/build-wasm" --target install -j $(nproc)
-    - name: Build QuantLib WASM wheel
+    - name: Build QuantLib wheels
       run: |
         VERSION="${{ needs.detect-version.outputs.version }}"
         QL_INSTALL_DIR="${GITHUB_WORKSPACE}/ql-wasm-install"
@@ -483,7 +483,7 @@ jobs:
           fi
         done
         ls -la "${WHEELHOUSE}"
-    - name: Verify WASM wheel
+    - name: Check
       run: |
         cd .ci/wasm
         npm install

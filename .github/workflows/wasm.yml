@@ -1,4 +1,4 @@
-name: WebAssembly Python build
+name: WebAssembly build
 on:
   push:
     branches:
@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  wasm-build:
+  build:
     runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v7
@@ -42,13 +42,14 @@ jobs:
         pip install setuptools pyodide-build build wheel
         pyodide xbuildenv install
         pyodide xbuildenv install-emscripten
-    - name: Build and Test WASM
+    - name: Build
+      run: |
+        QL_SRC_DIR="${GITHUB_WORKSPACE}/QuantLib" bash .ci/wasm/build_wasm.sh
+    - name: Check
       run: |
         cd .ci/wasm
         npm install
-        cd ../..
-        QL_SRC_DIR="${GITHUB_WORKSPACE}/QuantLib" bash .ci/wasm/build_wasm.sh
-        node .ci/wasm/test_wasm.mjs
+        node test_wasm.mjs
     - name: Save wheels as artifacts
       uses: actions/upload-artifact@v7
       with:
