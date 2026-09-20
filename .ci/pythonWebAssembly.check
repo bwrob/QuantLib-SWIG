@@ -8,12 +8,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 WHEEL_DIR="${1:-${REPO_DIR}/Python/dist}"
 
+# Detect Python ABI from wheels to select the matching Pyodide runtime:
+# Pyodide 0.27.x -> Python 3.12 (cp312)
+# Pyodide 0.29.x -> Python 3.13 (cp313)
+# Pyodide 314.x  -> Python 3.14 (cp314)
+PYODIDE_PKG="pyodide@0.27.8"
+if ls "${WHEEL_DIR}"/*cp313*.whl &>/dev/null; then
+    PYODIDE_PKG="pyodide@0.29.5"
+elif ls "${WHEEL_DIR}"/*cp314*.whl &>/dev/null; then
+    PYODIDE_PKG="pyodide@314.0.7"
+fi
+
 # Install pyodide in an ephemeral temp directory to avoid polluting the repo
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT
 
 cd "${TMP_DIR}"
-npm install --no-save pyodide@0.27.8
+npm install --no-save "${PYODIDE_PKG}"
 
 node --input-type=module - "${WHEEL_DIR}" << 'TESTEOF'
 import { loadPyodide } from "pyodide";
@@ -30,8 +41,13 @@ async function main() {
         throw new Error(`No WASM wheel found in ${distDir}`);
     }
 
-    // Prefer exact emscripten tag match if present
-    const preferred = files.find(f => f.includes("emscripten_3_1_58"));
+    // Match wheel according to Pyodide version
+    let preferred;
+    if (pyodide.version.startsWith("0.27.")) {
+        preferred = files.find(f => f.includes("emscripten_3_1_58")) || files.find(f => f.includes("cp312"));
+    } else if (pyodide.version.startsWith("0.28.") || pyodide.version.startsWith("0.29.")) {
+        preferred = files.find(f => f.includes("pyemscripten") && f.includes("cp313")) || files.find(f => f.includes("cp313"));
+    }
     const wheelName = preferred || files[0];
     const wheelPath = path.join(distDir, wheelName);
     console.log(`Found WASM wheel: ${wheelName}`);

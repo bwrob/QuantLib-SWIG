@@ -475,9 +475,9 @@ jobs:
 
         pyodide build --no-isolation --exports whole_archive --outdir "${WHEELHOUSE}"
 
-        # Ensure compatibility with both Pyodide 0.27 and newer pyemscripten tags
+        # Ensure wheel is compatible with Pyodide 0.27 (emscripten_3_1_58) if built with Python 3.12
         cd "${WHEELHOUSE}"
-        for f in *pyemscripten*.whl; do
+        for f in *cp312*pyemscripten*.whl; do
           if [ -f "$f" ]; then
             cp "$f" "$(echo "$f" | sed -E 's/pyemscripten_[0-9]+_[0-9]+/emscripten_3_1_58/g')"
           fi
