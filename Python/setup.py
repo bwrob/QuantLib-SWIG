@@ -242,11 +242,9 @@ def free_threading():
     return bool(sysconfig.get_config_var("Py_GIL_DISABLED"))
 
 
-if py_limited_api():
-    with open("./setup.cfg", "w") as f:
+with open("./setup.cfg", "w") as f:
+    if py_limited_api():
         f.write("[bdist_wheel]" + os.linesep + "py_limited_api=cp39" + os.linesep)
-elif os.path.exists("./setup.cfg"):
-    os.remove("./setup.cfg")
 
 
 setup(
