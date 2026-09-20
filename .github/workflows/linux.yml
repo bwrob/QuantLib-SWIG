@@ -9,20 +9,29 @@ on:
   workflow_dispatch:
 jobs:
   build:
+    name: build (${{ matrix.language }}${{ matrix.config && format(', {0}', matrix.config) || '' }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - language: python
+            container: ghcr.io/lballabio/quantlib-swig-devenv:python
           - language: java
             config: -old
+            container: ghcr.io/lballabio/quantlib-swig-devenv:java
           - language: java
             config: -new
+            container: ghcr.io/lballabio/quantlib-swig-devenv:java
           - language: csharp
+            container: ghcr.io/lballabio/quantlib-swig-devenv:csharp
           - language: r
+            container: ghcr.io/lballabio/quantlib-swig-devenv:r
           - language: scala
-    container: ghcr.io/lballabio/quantlib-swig-devenv:${{ matrix.language }}
+            container: ghcr.io/lballabio/quantlib-swig-devenv:scala
+          - language: python
+            config: WebAssembly
+    container: ${{ matrix.container }}
     steps:
     - uses: actions/checkout@v7
     - name: Build
@@ -34,38 +43,3 @@ jobs:
     - name: Check
       run: |
         ./.ci/${{ matrix.language }}${{ matrix.config }}.check
-
-  wasm:
-    name: build (python, WebAssembly)
-    runs-on: ubuntu-24.04
-    steps:
-    - uses: actions/checkout@v7
-    - name: Checkout QuantLib
-      uses: actions/checkout@v7
-      with:
-        repository: lballabio/QuantLib
-        path: QuantLib
-    - name: Setup system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libboost-dev swig
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    - uses: actions/setup-node@v4
-      with:
-        node-version: '22'
-    - name: Install Pyodide build tools
-      run: |
-        pip install --upgrade pip
-        pip install setuptools pyodide-build build wheel
-        pyodide xbuildenv install
-        pyodide xbuildenv install-emscripten
-    - name: Build
-      run: |
-        QL_SRC_DIR="${GITHUB_WORKSPACE}/QuantLib" bash .ci/wasm/build_wasm.sh
-    - name: Check
-      run: |
-        cd .ci/wasm
-        npm install --no-save pyodide@0.27.8
-        node test_wasm.mjs

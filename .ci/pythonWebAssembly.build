@@ -1,0 +1,27 @@
+#!/bin/bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Setup system dependencies if running with sudo available
+if command -v sudo &>/dev/null; then
+    sudo apt-get update
+    sudo apt-get install -y libboost-dev swig
+fi
+
+# Setup python venv and pyodide build tools
+python3 -m venv "${REPO_DIR}/.venv"
+source "${REPO_DIR}/.venv/bin/activate"
+pip install --upgrade pip
+pip install setuptools pyodide-build build wheel
+pyodide xbuildenv install
+pyodide xbuildenv install-emscripten
+
+# Checkout QuantLib if not already present
+QL_SRC_DIR="${GITHUB_WORKSPACE:-${REPO_DIR}/..}/QuantLib"
+if [ ! -d "${QL_SRC_DIR}" ]; then
+    git clone --depth 1 https://github.com/lballabio/QuantLib.git "${QL_SRC_DIR}"
+fi
+
+QL_SRC_DIR="${QL_SRC_DIR}" bash "${REPO_DIR}/.ci/wasm/build_wasm.sh"
