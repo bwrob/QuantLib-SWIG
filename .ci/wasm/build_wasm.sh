@@ -45,7 +45,7 @@ if ! command -v emcmake &>/dev/null; then
     fi
 fi
 
-echo "=== Building QuantLib C++ for WebAssembly ==="
+echo "Building QuantLib C++ for WebAssembly..."
 if [ ! -d "${QL_SRC_DIR}" ]; then
     echo "Error: QuantLib source directory not found at ${QL_SRC_DIR}"
     exit 1
@@ -70,18 +70,18 @@ emcmake cmake -B "${QL_BUILD_DIR}" -S "${QL_SRC_DIR}" \
 cmake --build "${QL_BUILD_DIR}" --target install -j "${BUILD_JOBS}"
 
 if command -v swig &>/dev/null; then
-    echo "=== Generating SWIG wrappers with swig ==="
+    echo "Generating SWIG wrappers..."
     cd "${PYTHON_DIR}"
     swig -python -c++ -outdir src/QuantLib -o src/QuantLib/quantlib_wrap.cpp ../SWIG/quantlib.i
 elif [ -f "${PYTHON_DIR}/src/QuantLib/quantlib_wrap.cpp" ]; then
-    echo "=== Using pre-existing SWIG wrappers ==="
+    echo "Using pre-existing SWIG wrappers"
     cd "${PYTHON_DIR}"
 else
     echo "Error: SWIG wrapper not found at ${PYTHON_DIR}/src/QuantLib/quantlib_wrap.cpp and swig is not installed."
     exit 1
 fi
 
-echo "=== Building Python WASM Wheel with pyodide-build ==="
+echo "Building Python WASM wheel..."
 export PATH="${QL_INSTALL_DIR}/bin:$PATH"
 export CXXFLAGS="-I${BOOST_DIR}/include ${CXXFLAGS:-}"
 
@@ -95,4 +95,4 @@ for f in "${PYTHON_DIR}/dist"/*pyemscripten*.whl; do
     fi
 done
 
-echo "=== Successfully built QuantLib WASM wheel in ${PYTHON_DIR}/dist/ ==="
+echo "Successfully built QuantLib WASM wheel in ${PYTHON_DIR}/dist/"

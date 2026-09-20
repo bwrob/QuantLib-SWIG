@@ -31,7 +31,7 @@ async function main() {
     console.log("Installing QuantLib wheel in Pyodide...");
     await micropip.install(`emfs:/${wheelName}`);
 
-    console.log("\n================ Running QuantLib WASM Verification ================\n");
+    console.log("\nRunning QuantLib WASM verification...\n");
 
     const pythonCode = `
 import QuantLib as ql
@@ -157,7 +157,7 @@ except RuntimeError as e:
     print(f"\\nC++ Exception properly caught in Python: {e}")
     print("Exception handling verification: PASSED")
 
-print("\\nALL QUANTLIB WASM TESTS (Options, Swaps, Bonds, Exceptions) PASSED SUCCESSFULLY! 🎉")
+print("\\nAll QuantLib WASM tests passed successfully.")
 `;
 
     await pyodide.runPythonAsync(pythonCode);
