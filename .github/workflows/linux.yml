@@ -67,5 +67,5 @@ jobs:
     - name: Check
       run: |
         cd .ci/wasm
-        npm install
+        npm install --no-save pyodide@0.27.8
         node test_wasm.mjs

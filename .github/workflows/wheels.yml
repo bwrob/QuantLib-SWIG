@@ -486,7 +486,7 @@ jobs:
     - name: Check
       run: |
         cd .ci/wasm
-        npm install
+        npm install --no-save pyodide@0.27.8
         node test_wasm.mjs "${GITHUB_WORKSPACE}/wheelhouse"
     - name: Save wheels as artifacts
       uses: actions/upload-artifact@v7
