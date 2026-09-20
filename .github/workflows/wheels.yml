@@ -445,8 +445,15 @@ jobs:
         mkdir -p /tmp/boost/include
         ln -sfn /usr/include/boost /tmp/boost/include/boost
 
-        EMSDK_EMCMAKE=$(find ~/.cache/pyodide-build -name emcmake | head -n 1)
-        export PATH="$(dirname "${EMSDK_EMCMAKE}"):$PATH"
+        if ! command -v emcmake &>/dev/null; then
+          EMSDK_EMCMAKE=$(find "$HOME/.cache/pyodide-build" -name emcmake 2>/dev/null | head -n 1)
+          if [ -z "${EMSDK_EMCMAKE}" ]; then
+            EMSDK_EMCMAKE=$(find "$(python -c "from pyodide_build.common import default_xbuildenv_path; print(default_xbuildenv_path())" 2>/dev/null)" -name emcmake 2>/dev/null | head -n 1)
+          fi
+          if [ -n "${EMSDK_EMCMAKE}" ]; then
+            export PATH="$(dirname "${EMSDK_EMCMAKE}"):$PATH"
+          fi
+        fi
 
         mkdir -p "${QL_DIR}/build-wasm"
         emcmake cmake -B "${QL_DIR}/build-wasm" -S "${QL_DIR}" \
@@ -475,7 +482,7 @@ jobs:
 
         pyodide build --no-isolation --exports whole_archive --outdir "${WHEELHOUSE}"
 
-        # Ensure wheel is compatible with Pyodide 0.27 (emscripten_3_1_58)
+        # Ensure wheel is compatible with Pyodide 0.27 (emscripten_3_1_58) for local check
         cd "${WHEELHOUSE}"
         for f in *cp312*pyemscripten*.whl; do
           if [ -f "$f" ]; then
@@ -486,6 +493,10 @@ jobs:
     - name: Check
       run: |
         ./.ci/pythonWebAssembly.check "${GITHUB_WORKSPACE}/wheelhouse"
+    - name: Clean up non-standard wheel aliases for PyPI publish
+      run: |
+        rm -f "${GITHUB_WORKSPACE}/wheelhouse"/*emscripten_*.whl
+        ls -la "${GITHUB_WORKSPACE}/wheelhouse"
     - name: Save wheels as artifacts
       uses: actions/upload-artifact@v7
       with:
