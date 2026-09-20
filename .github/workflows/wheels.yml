@@ -425,7 +425,7 @@ jobs:
       run: |
         pip install --upgrade pip
         pip install setuptools pyodide-build build wheel
-        pyodide xbuildenv install
+        pyodide xbuildenv install 0.27.8
         pyodide xbuildenv install-emscripten
     - uses: actions/download-artifact@v8
       with:
