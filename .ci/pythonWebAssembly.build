@@ -4,13 +4,25 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Setup system dependencies if running with sudo available
-if command -v sudo &>/dev/null; then
-    sudo apt-get update
-    sudo apt-get install -y libboost-dev swig
+# Install system dependencies if missing
+if [ "$(id -u)" -eq 0 ]; then
+    apt-get update -qq
+    apt-get install -y -qq libboost-dev swig git wget tar xz-utils
+elif command -v sudo &>/dev/null; then
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq libboost-dev swig git wget tar xz-utils
 fi
 
-# Setup python venv and pyodide build tools
+# Install Node.js if missing
+if ! command -v node &>/dev/null; then
+    if command -v wget &>/dev/null; then
+        wget -qO- https://nodejs.org/dist/v22.12.0/node-v22.12.0-linux-x64.tar.xz | tar -xJ -C /usr/local --strip-components=1
+    elif command -v curl &>/dev/null; then
+        curl -fsSL https://nodejs.org/dist/v22.12.0/node-v22.12.0-linux-x64.tar.xz | tar -xJ -C /usr/local --strip-components=1
+    fi
+fi
+
+# Setup Python virtual environment and pyodide build tools
 python3 -m venv "${REPO_DIR}/.venv"
 source "${REPO_DIR}/.venv/bin/activate"
 pip install --upgrade pip
@@ -18,9 +30,15 @@ pip install setuptools pyodide-build build wheel
 pyodide xbuildenv install
 pyodide xbuildenv install-emscripten
 
-# Checkout QuantLib if not already present
-QL_SRC_DIR="${GITHUB_WORKSPACE:-${REPO_DIR}/..}/QuantLib"
-if [ ! -d "${QL_SRC_DIR}" ]; then
+# Resolve QuantLib C++ source tree
+if [ -d "${GITHUB_WORKSPACE}/QuantLib" ]; then
+    QL_SRC_DIR="${GITHUB_WORKSPACE}/QuantLib"
+elif [ -d "/QuantLib" ]; then
+    QL_SRC_DIR="/QuantLib"
+elif [ -d "${REPO_DIR}/../QuantLib" ]; then
+    QL_SRC_DIR="${REPO_DIR}/../QuantLib"
+else
+    QL_SRC_DIR="/tmp/QuantLib"
     git clone --depth 1 https://github.com/lballabio/QuantLib.git "${QL_SRC_DIR}"
 fi
 

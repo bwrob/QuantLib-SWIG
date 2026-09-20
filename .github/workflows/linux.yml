@@ -9,29 +9,22 @@ on:
   workflow_dispatch:
 jobs:
   build:
-    name: build (${{ matrix.language }}${{ matrix.config && format(', {0}', matrix.config) || '' }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - language: python
-            container: ghcr.io/lballabio/quantlib-swig-devenv:python
           - language: java
             config: -old
-            container: ghcr.io/lballabio/quantlib-swig-devenv:java
           - language: java
             config: -new
-            container: ghcr.io/lballabio/quantlib-swig-devenv:java
           - language: csharp
-            container: ghcr.io/lballabio/quantlib-swig-devenv:csharp
           - language: r
-            container: ghcr.io/lballabio/quantlib-swig-devenv:r
           - language: scala
-            container: ghcr.io/lballabio/quantlib-swig-devenv:scala
           - language: python
             config: WebAssembly
-    container: ${{ matrix.container }}
+    container: ghcr.io/lballabio/quantlib-swig-devenv:${{ matrix.language }}
     steps:
     - uses: actions/checkout@v7
     - name: Build
