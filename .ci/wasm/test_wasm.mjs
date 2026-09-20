@@ -16,7 +16,9 @@ async function main() {
         throw new Error(`No WASM wheel found in ${distDir}`);
     }
 
-    const wheelName = files[0];
+    // Prefer exact emscripten tag match if present
+    const preferred = files.find(f => f.includes("emscripten_3_1_58"));
+    const wheelName = preferred || files[0];
     const wheelPath = path.join(distDir, wheelName);
     console.log(`Found WASM wheel: ${wheelName}`);
 

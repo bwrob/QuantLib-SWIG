@@ -10,6 +10,18 @@ PYTHON_DIR="${REPO_DIR}/Python"
 QL_SRC_DIR="${QL_SRC_DIR:-${REPO_DIR}/../QuantLib}"
 BOOST_DIR="${BOOST_DIR:-$(brew --prefix boost 2>/dev/null || echo '/usr/local')}"
 BUILD_JOBS="${BUILD_JOBS:-4}"
+# Activate virtual environment if present
+if [ -f "${REPO_DIR}/.venv/bin/activate" ]; then
+    source "${REPO_DIR}/.venv/bin/activate"
+fi
+
+# Detect emcmake if not in PATH
+if ! command -v emcmake &>/dev/null; then
+    EMSDK_EMCMAKE=$(find "$(python -c "from pyodide_build.common import default_xbuildenv_path; print(default_xbuildenv_path())" 2>/dev/null)" -name emcmake 2>/dev/null | head -n 1)
+    if [ -n "${EMSDK_EMCMAKE}" ]; then
+        export PATH="$(dirname "${EMSDK_EMCMAKE}"):$PATH"
+    fi
+fi
 
 echo "=== Building QuantLib C++ for WebAssembly ==="
 if [ ! -d "${QL_SRC_DIR}" ]; then
@@ -40,9 +52,17 @@ cd "${PYTHON_DIR}"
 swig -python -c++ -outdir src/QuantLib -o src/QuantLib/quantlib_wrap.cpp ../SWIG/quantlib.i
 
 echo "=== Building Python WASM Wheel with pyodide-build ==="
-export QL_DIR="${QL_INSTALL_DIR}"
-export INCLUDE="${BOOST_DIR}/include"
+export PATH="${QL_INSTALL_DIR}/bin:$PATH"
+export CXXFLAGS="-I${BOOST_DIR}/include"
 
 pyodide build --no-isolation --exports whole_archive
+
+# Ensure wheel is compatible with both Pyodide 0.27 (emscripten_3_1_58) and newer pyemscripten tags
+for f in "${PYTHON_DIR}/dist"/*pyemscripten*.whl; do
+    if [ -f "$f" ]; then
+        em_whl=$(echo "$f" | sed -E 's/pyemscripten_[0-9]+_[0-9]+/emscripten_3_1_58/g')
+        cp "$f" "$em_whl"
+    fi
+done
 
 echo "=== Successfully built QuantLib WASM wheel in ${PYTHON_DIR}/dist/ ==="

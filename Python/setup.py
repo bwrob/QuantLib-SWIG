@@ -52,15 +52,12 @@ def define_macros():
         ]
 
     elif compiler == "unix":
-        if "QL_DIR" in os.environ:
-            define_macros += [("NDEBUG", None)]
-        else:
-            ql_compile_args = os.popen("quantlib-config --cflags").read()[:-1].split()
+        ql_compile_args = os.popen("quantlib-config --cflags").read()[:-1].split()
 
-            define_macros += [
-                (arg[2:], None) for arg in ql_compile_args if arg.startswith("-D")
-            ]
-            define_macros += [("NDEBUG", None)]
+        define_macros += [
+            (arg[2:], None) for arg in ql_compile_args if arg.startswith("-D")
+        ]
+        define_macros += [("NDEBUG", None)]
 
     return define_macros
 
@@ -69,20 +66,12 @@ def include_dirs():
 
     include_dirs = []
 
-    if "QL_DIR" in os.environ:
-        ql_dir = os.environ["QL_DIR"]
-        if os.path.exists(os.path.join(ql_dir, "include")):
-            include_dirs += [os.path.join(ql_dir, "include")]
-        else:
-            include_dirs += [ql_dir]
-
     compiler = get_default_compiler()
 
     if compiler == "msvc":
         try:
             QL_INSTALL_DIR = os.environ["QL_DIR"]
-            if QL_INSTALL_DIR not in include_dirs:
-                include_dirs += [QL_INSTALL_DIR]
+            include_dirs += [QL_INSTALL_DIR]
         except KeyError:
             print("warning: unable to detect QuantLib installation")
 
@@ -92,15 +81,9 @@ def include_dirs():
             ]
 
     elif compiler == "unix":
-        if "QL_DIR" not in os.environ:
-            ql_compile_args = os.popen("quantlib-config --cflags").read()[:-1].split()
-            include_dirs += [arg[2:] for arg in ql_compile_args if arg.startswith("-I")]
+        ql_compile_args = os.popen("quantlib-config --cflags").read()[:-1].split()
 
-        if "INCLUDE" in os.environ:
-            sep = ";" if ";" in os.environ["INCLUDE"] else ":"
-            include_dirs += [
-                d.strip() for d in os.environ["INCLUDE"].split(sep) if d.strip()
-            ]
+        include_dirs += [arg[2:] for arg in ql_compile_args if arg.startswith("-I")]
 
     return include_dirs
 
@@ -109,21 +92,12 @@ def library_dirs():
 
     library_dirs = []
 
-    if "QL_DIR" in os.environ:
-        ql_dir = os.environ["QL_DIR"]
-        for candidate in [os.path.join(ql_dir, "lib"), os.path.join(ql_dir, "lib64"), ql_dir]:
-            if os.path.exists(candidate):
-                library_dirs += [candidate]
-                break
-
     compiler = get_default_compiler()
 
     if compiler == "msvc":
         try:
             QL_INSTALL_DIR = os.environ["QL_DIR"]
-            lib_dir = os.path.join(QL_INSTALL_DIR, "lib")
-            if lib_dir not in library_dirs:
-                library_dirs += [lib_dir]
+            library_dirs += [os.path.join(QL_INSTALL_DIR, "lib")]
         except KeyError:
             print("warning: unable to detect QuantLib installation")
 
@@ -132,13 +106,9 @@ def library_dirs():
             library_dirs += [d for d in dirs if d.strip()]
 
     elif compiler == "unix":
-        if "QL_DIR" not in os.environ:
-            ql_link_args = os.popen("quantlib-config --libs").read()[:-1].split()
-            library_dirs += [arg[2:] for arg in ql_link_args if arg.startswith("-L")]
+        ql_link_args = os.popen("quantlib-config --libs").read()[:-1].split()
 
-        if "LIB" in os.environ:
-            sep = ";" if ";" in os.environ["LIB"] else ":"
-            library_dirs += [d for d in os.environ["LIB"].split(sep) if d.strip()]
+        library_dirs += [arg[2:] for arg in ql_link_args if arg.startswith("-L")]
 
     return library_dirs
 
@@ -150,11 +120,9 @@ def libraries():
     compiler = get_default_compiler()
 
     if compiler == "unix":
-        if "QL_DIR" in os.environ:
-            libraries += ["QuantLib"]
-        else:
-            ql_link_args = os.popen("quantlib-config --libs").read()[:-1].split()
-            libraries += [arg[2:] for arg in ql_link_args if arg.startswith("-l")]
+        ql_link_args = os.popen("quantlib-config --libs").read()[:-1].split()
+
+        libraries += [arg[2:] for arg in ql_link_args if arg.startswith("-l")]
 
     return libraries
 
@@ -183,20 +151,16 @@ def extra_compile_args():
                 extra_compile_args.append("/MD")
 
     elif compiler == "unix":
-        if "QL_DIR" in os.environ:
-            extra_compile_args = ["-std=c++17", "-Wno-unused"]
-        else:
-            ql_compile_args = os.popen("quantlib-config --cflags").read()[:-1].split()
-            extra_compile_args = [
-                arg
-                for arg in ql_compile_args
-                if not arg.startswith("-D")
-                if not arg.startswith("-I")
-            ] + ["-Wno-unused"]
+        ql_compile_args = os.popen("quantlib-config --cflags").read()[:-1].split()
 
+        extra_compile_args = [
+            arg
+            for arg in ql_compile_args
+            if not arg.startswith("-D")
+            if not arg.startswith("-I")
+        ] + ["-Wno-unused"]
         if is_emscripten():
             extra_compile_args += ["-fexceptions"]
-
         if "CXXFLAGS" in os.environ:
             extra_compile_args += os.environ["CXXFLAGS"].split()
 
@@ -221,18 +185,16 @@ def extra_link_args():
             extra_link_args += ["/DEBUG"]
 
     elif compiler == "unix":
-        if "QL_DIR" not in os.environ:
-            ql_link_args = os.popen("quantlib-config --libs").read()[:-1].split()
-            extra_link_args = [
-                arg
-                for arg in ql_link_args
-                if not arg.startswith("-L")
-                if not arg.startswith("-l")
-            ]
+        ql_link_args = os.popen("quantlib-config --libs").read()[:-1].split()
 
+        extra_link_args = [
+            arg
+            for arg in ql_link_args
+            if not arg.startswith("-L")
+            if not arg.startswith("-l")
+        ]
         if is_emscripten():
             extra_link_args += ["-fexceptions"]
-
         if "LDFLAGS" in os.environ:
             extra_link_args += os.environ["LDFLAGS"].split()
 
