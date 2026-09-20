@@ -12,6 +12,21 @@ WHEEL_DIR="${1:-${REPO_DIR}/Python/dist}"
 # This matches the target platform used by pandas, scipy, and the PyData WASM ecosystem.
 PYODIDE_PKG="pyodide@0.27.8"
 
+# Ensure Node.js and npm are available in PATH
+NODE_INSTALL_DIR="/usr/local"
+if [ "$(id -u)" -ne 0 ]; then
+    NODE_INSTALL_DIR="${HOME}/.local"
+fi
+export PATH="${NODE_INSTALL_DIR}/bin:$PATH"
+
+if ! command -v node &>/dev/null || ! command -v npm &>/dev/null; then
+    if command -v wget &>/dev/null; then
+        wget -qO- https://nodejs.org/dist/v22.12.0/node-v22.12.0-linux-x64.tar.xz | tar -xJ -C "${NODE_INSTALL_DIR}" --strip-components=1
+    elif command -v curl &>/dev/null; then
+        curl -fsSL https://nodejs.org/dist/v22.12.0/node-v22.12.0-linux-x64.tar.xz | tar -xJ -C "${NODE_INSTALL_DIR}" --strip-components=1
+    fi
+fi
+
 # Install pyodide in an ephemeral temp directory to avoid polluting the repo
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT

@@ -9,23 +9,49 @@ PYTHON_DIR="${REPO_DIR}/Python"
 # Install system dependencies if missing
 if [ "$(id -u)" -eq 0 ]; then
     apt-get update -qq
-    apt-get install -y -qq cmake libboost-dev swig git wget tar xz-utils
+    apt-get install -y -qq cmake libboost-dev swig git wget tar xz-utils curl python3.12 python3.12-venv 2>/dev/null || apt-get install -y -qq cmake libboost-dev swig git wget tar xz-utils curl
 elif command -v sudo &>/dev/null; then
     sudo apt-get update -qq
-    sudo apt-get install -y -qq cmake libboost-dev swig git wget tar xz-utils
+    sudo apt-get install -y -qq cmake libboost-dev swig git wget tar xz-utils curl python3.12 python3.12-venv 2>/dev/null || sudo apt-get install -y -qq cmake libboost-dev swig git wget tar xz-utils curl
 fi
 
 # Install Node.js if missing
+NODE_INSTALL_DIR="/usr/local"
+if [ "$(id -u)" -ne 0 ]; then
+    NODE_INSTALL_DIR="${HOME}/.local"
+    mkdir -p "${NODE_INSTALL_DIR}"
+fi
+export PATH="${NODE_INSTALL_DIR}/bin:$PATH"
+
 if ! command -v node &>/dev/null; then
     if command -v wget &>/dev/null; then
-        wget -qO- https://nodejs.org/dist/v22.12.0/node-v22.12.0-linux-x64.tar.xz | tar -xJ -C /usr/local --strip-components=1
+        wget -qO- https://nodejs.org/dist/v22.12.0/node-v22.12.0-linux-x64.tar.xz | tar -xJ -C "${NODE_INSTALL_DIR}" --strip-components=1
     elif command -v curl &>/dev/null; then
-        curl -fsSL https://nodejs.org/dist/v22.12.0/node-v22.12.0-linux-x64.tar.xz | tar -xJ -C /usr/local --strip-components=1
+        curl -fsSL https://nodejs.org/dist/v22.12.0/node-v22.12.0-linux-x64.tar.xz | tar -xJ -C "${NODE_INSTALL_DIR}" --strip-components=1
     fi
 fi
 
-# Setup Python virtual environment and pyodide build tools
-python3 -m venv "${REPO_DIR}/.venv"
+# Setup Python 3.12 virtual environment and pyodide build tools
+# Pyodide 0.27.8 targets Python 3.12 (standard PyData WASM ecosystem target)
+rm -rf "${REPO_DIR}/.venv"
+if command -v python3.12 &>/dev/null; then
+    python3.12 -m venv "${REPO_DIR}/.venv"
+else
+    echo "python3.12 not found in system packages; provisioning via uv..."
+    if ! command -v uv &>/dev/null; then
+        if command -v curl &>/dev/null; then
+            curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="/usr/local/bin" sh 2>/dev/null || true
+        elif command -v wget &>/dev/null; then
+            wget -qO- https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="/usr/local/bin" sh 2>/dev/null || true
+        fi
+        if ! command -v uv &>/dev/null; then
+            python3 -m pip install uv 2>/dev/null || pip install uv 2>/dev/null || true
+        fi
+    fi
+    export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
+    uv venv --seed --python 3.12 "${REPO_DIR}/.venv"
+fi
+
 source "${REPO_DIR}/.venv/bin/activate"
 pip install --upgrade pip
 pip install setuptools pyodide-build build wheel
@@ -72,7 +98,10 @@ BUILD_JOBS="${BUILD_JOBS:-4}"
 
 # Detect emcmake if not in PATH
 if ! command -v emcmake &>/dev/null; then
-    EMSDK_EMCMAKE=$(find "$(python -c "from pyodide_build.common import default_xbuildenv_path; print(default_xbuildenv_path())" 2>/dev/null)" -name emcmake 2>/dev/null | head -n 1)
+    EMSDK_EMCMAKE=$(find "$HOME/.cache/pyodide-build" -name emcmake 2>/dev/null | head -n 1)
+    if [ -z "${EMSDK_EMCMAKE}" ]; then
+        EMSDK_EMCMAKE=$(find "$(python -c "from pyodide_build.common import default_xbuildenv_path; print(default_xbuildenv_path())" 2>/dev/null)" -name emcmake 2>/dev/null | head -n 1)
+    fi
     if [ -n "${EMSDK_EMCMAKE}" ]; then
         export PATH="$(dirname "${EMSDK_EMCMAKE}"):$PATH"
     fi
