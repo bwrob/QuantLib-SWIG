@@ -19,9 +19,21 @@ if [ -z "${BOOST_DIR}" ]; then
         BOOST_DIR="/usr"
     fi
 fi
+
+# On Linux (e.g. Ubuntu/Debian), Boost is installed into /usr/include/boost.
+# Passing -I/usr/include to Emscripten causes clang to look in host glibc headers
+# (e.g. unistd.h, features.h) instead of Emscripten's musl libc sysroot, causing compilation failure.
+# Isolate the boost/ directory so only Boost headers are exposed.
+if [ "${BOOST_DIR}" = "/usr" ] || [ "${BOOST_DIR}" = "/usr/" ]; then
+    ISOLATED_BOOST_DIR="/tmp/ql-boost-wasm"
+    mkdir -p "${ISOLATED_BOOST_DIR}/include"
+    ln -sfn /usr/include/boost "${ISOLATED_BOOST_DIR}/include/boost"
+    BOOST_DIR="${ISOLATED_BOOST_DIR}"
+fi
+
 BUILD_JOBS="${BUILD_JOBS:-4}"
-# Activate virtual environment if present
-if [ -f "${REPO_DIR}/.venv/bin/activate" ]; then
+# Activate virtual environment if present and not already in one
+if [ -z "${VIRTUAL_ENV}" ] && [ -f "${REPO_DIR}/.venv/bin/activate" ]; then
     source "${REPO_DIR}/.venv/bin/activate"
 fi
 
@@ -39,8 +51,8 @@ if [ ! -d "${QL_SRC_DIR}" ]; then
     exit 1
 fi
 
-QL_BUILD_DIR="${QL_SRC_DIR}/build-wasm"
-QL_INSTALL_DIR="${QL_BUILD_DIR}/install"
+QL_BUILD_DIR="${QL_BUILD_DIR:-${QL_SRC_DIR}/build-wasm}"
+QL_INSTALL_DIR="${QL_INSTALL_DIR:-${QL_BUILD_DIR}/install}"
 
 mkdir -p "${QL_BUILD_DIR}"
 emcmake cmake -B "${QL_BUILD_DIR}" -S "${QL_SRC_DIR}" \

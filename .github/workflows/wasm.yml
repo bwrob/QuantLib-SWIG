@@ -39,8 +39,9 @@ jobs:
     - name: Install Pyodide build tools
       run: |
         pip install --upgrade pip
-        pip install pyodide-build build wheel
+        pip install setuptools pyodide-build build wheel
         pyodide xbuildenv install
+        pyodide xbuildenv install-emscripten
     - name: Build and Test WASM
       run: |
         cd .ci/wasm
