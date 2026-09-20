@@ -475,7 +475,7 @@ jobs:
 
         pyodide build --no-isolation --exports whole_archive --outdir "${WHEELHOUSE}"
 
-        # Ensure wheel is compatible with Pyodide 0.27 (emscripten_3_1_58) if built with Python 3.12
+        # Ensure wheel is compatible with Pyodide 0.27 (emscripten_3_1_58)
         cd "${WHEELHOUSE}"
         for f in *cp312*pyemscripten*.whl; do
           if [ -f "$f" ]; then
