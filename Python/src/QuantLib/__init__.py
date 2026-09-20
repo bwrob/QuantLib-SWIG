@@ -16,6 +16,21 @@
  FOR A PARTICULAR PURPOSE.  See the license for more details.
 """
 
+import sys
+if sys.platform == "emscripten":
+    # In Pyodide's WebAssembly dynamic linking runtime, C++ exceptions thrown
+    # from dynamically loaded extension modules dispatch __cxa_throw through
+    # function table slot 0. Registering ___cxa_throw in wasmTableMirror[0]
+    # ensures C++ exceptions properly translate to Python exceptions.
+    try:
+        import pyodide_js
+        _m = getattr(pyodide_js, "_module", None)
+        if _m and hasattr(_m, "wasmTableMirror") and hasattr(_m, "___cxa_throw"):
+            _m.wasmTableMirror[0] = _m.___cxa_throw
+        del _m
+    except Exception:
+        pass
+
 from .QuantLib import *
 from . import _QuantLib
 

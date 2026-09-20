@@ -22,6 +22,8 @@ jobs:
           - language: csharp
           - language: r
           - language: scala
+          - language: python
+            config: WebAssembly
     container: ghcr.io/lballabio/quantlib-swig-devenv:${{ matrix.language }}
     steps:
     - uses: actions/checkout@v7

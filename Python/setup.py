@@ -26,6 +26,10 @@ def is_debug_quantlib():
     return os.getenv("QL_DEBUG", "False").lower() in ("true", "1", "t")
 
 
+def is_emscripten():
+    return "PYODIDE" in os.environ or "EMSCRIPTEN" in os.environ or sys.platform == "emscripten"
+
+
 def define_macros():
 
     define_macros = []
@@ -155,6 +159,8 @@ def extra_compile_args():
             if not arg.startswith("-D")
             if not arg.startswith("-I")
         ] + ["-Wno-unused"]
+        if is_emscripten():
+            extra_compile_args += ["-fexceptions"]
         if "CXXFLAGS" in os.environ:
             extra_compile_args += os.environ["CXXFLAGS"].split()
 
@@ -187,6 +193,8 @@ def extra_link_args():
             if not arg.startswith("-L")
             if not arg.startswith("-l")
         ]
+        if is_emscripten():
+            extra_link_args += ["-fexceptions"]
         if "LDFLAGS" in os.environ:
             extra_link_args += os.environ["LDFLAGS"].split()
 
@@ -227,7 +235,7 @@ lazily, sharing them will probably lead to data races.
 
 
 def py_limited_api():
-    return platform.python_implementation() == "CPython" and not free_threading()
+    return platform.python_implementation() == "CPython" and not free_threading() and not is_emscripten()
 
 
 def free_threading():

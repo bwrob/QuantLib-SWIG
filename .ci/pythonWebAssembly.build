@@ -1,0 +1,160 @@
+#!/bin/bash
+# Builds QuantLib and QuantLib-SWIG Python bindings for WebAssembly / Pyodide.
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PYTHON_DIR="${REPO_DIR}/Python"
+
+# Install system dependencies if missing
+if [ "$(id -u)" -eq 0 ]; then
+    apt-get update -qq
+    apt-get install -y -qq cmake libboost-dev swig git wget tar xz-utils curl python3.12 python3.12-venv 2>/dev/null || apt-get install -y -qq cmake libboost-dev swig git wget tar xz-utils curl
+elif command -v sudo &>/dev/null; then
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq cmake libboost-dev swig git wget tar xz-utils curl python3.12 python3.12-venv 2>/dev/null || sudo apt-get install -y -qq cmake libboost-dev swig git wget tar xz-utils curl
+fi
+
+# Install Node.js if missing
+NODE_INSTALL_DIR="/usr/local"
+if [ "$(id -u)" -ne 0 ]; then
+    NODE_INSTALL_DIR="${HOME}/.local"
+    mkdir -p "${NODE_INSTALL_DIR}"
+fi
+export PATH="${NODE_INSTALL_DIR}/bin:$PATH"
+
+if ! command -v node &>/dev/null; then
+    if command -v wget &>/dev/null; then
+        wget -qO- https://nodejs.org/dist/v22.12.0/node-v22.12.0-linux-x64.tar.xz | tar -xJ -C "${NODE_INSTALL_DIR}" --strip-components=1
+    elif command -v curl &>/dev/null; then
+        curl -fsSL https://nodejs.org/dist/v22.12.0/node-v22.12.0-linux-x64.tar.xz | tar -xJ -C "${NODE_INSTALL_DIR}" --strip-components=1
+    fi
+fi
+
+# Setup Python 3.12 virtual environment and pyodide build tools
+# Pyodide 0.27.8 targets Python 3.12 (standard PyData WASM ecosystem target)
+rm -rf "${REPO_DIR}/.venv"
+if command -v python3.12 &>/dev/null; then
+    python3.12 -m venv "${REPO_DIR}/.venv"
+else
+    echo "python3.12 not found in system packages; provisioning via uv..."
+    if ! command -v uv &>/dev/null; then
+        if command -v curl &>/dev/null; then
+            curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="/usr/local/bin" sh 2>/dev/null || true
+        elif command -v wget &>/dev/null; then
+            wget -qO- https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="/usr/local/bin" sh 2>/dev/null || true
+        fi
+        if ! command -v uv &>/dev/null; then
+            python3 -m pip install uv 2>/dev/null || pip install uv 2>/dev/null || true
+        fi
+    fi
+    export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
+    uv venv --seed --python 3.12 "${REPO_DIR}/.venv"
+fi
+
+source "${REPO_DIR}/.venv/bin/activate"
+pip install --upgrade pip
+pip install setuptools pyodide-build build wheel
+pyodide xbuildenv install 0.27.8
+pyodide xbuildenv install-emscripten
+
+# Resolve QuantLib C++ source tree
+if [ -d "${GITHUB_WORKSPACE}/QuantLib" ]; then
+    QL_SRC_DIR="${GITHUB_WORKSPACE}/QuantLib"
+elif [ -d "/QuantLib" ]; then
+    QL_SRC_DIR="/QuantLib"
+elif [ -d "${REPO_DIR}/../QuantLib" ]; then
+    QL_SRC_DIR="${REPO_DIR}/../QuantLib"
+else
+    QL_SRC_DIR="/tmp/QuantLib"
+    git clone --depth 1 https://github.com/lballabio/QuantLib.git "${QL_SRC_DIR}"
+fi
+
+# Detect Boost include directory
+if [ -z "${BOOST_DIR}" ]; then
+    if [ -d "/usr/include/boost" ]; then
+        BOOST_DIR="/usr"
+    elif [ -d "/usr/local/include/boost" ]; then
+        BOOST_DIR="/usr/local"
+    elif command -v brew &>/dev/null; then
+        BOOST_DIR="$(brew --prefix boost 2>/dev/null || echo '/usr/local')"
+    else
+        BOOST_DIR="/usr"
+    fi
+fi
+
+# On Linux (e.g. Ubuntu/Debian), Boost is installed into /usr/include/boost.
+# Passing -I/usr/include to Emscripten causes clang to look in host glibc headers
+# (e.g. unistd.h, features.h) instead of Emscripten's musl libc sysroot, causing
+# compilation failure. Isolate the boost/ directory so only Boost headers are exposed.
+if [ "${BOOST_DIR}" = "/usr" ] || [ "${BOOST_DIR}" = "/usr/" ]; then
+    ISOLATED_BOOST_DIR="/tmp/ql-boost-wasm"
+    mkdir -p "${ISOLATED_BOOST_DIR}/include"
+    ln -sfn /usr/include/boost "${ISOLATED_BOOST_DIR}/include/boost"
+    BOOST_DIR="${ISOLATED_BOOST_DIR}"
+fi
+
+BUILD_JOBS="${BUILD_JOBS:-4}"
+
+# Detect emcmake if not in PATH
+if ! command -v emcmake &>/dev/null; then
+    EMSDK_EMCMAKE=$(find "$HOME/.cache/pyodide-build" -name emcmake 2>/dev/null | head -n 1)
+    if [ -z "${EMSDK_EMCMAKE}" ]; then
+        EMSDK_EMCMAKE=$(find "$(python -c "from pyodide_build.common import default_xbuildenv_path; print(default_xbuildenv_path())" 2>/dev/null)" -name emcmake 2>/dev/null | head -n 1)
+    fi
+    if [ -n "${EMSDK_EMCMAKE}" ]; then
+        export PATH="$(dirname "${EMSDK_EMCMAKE}"):$PATH"
+    fi
+fi
+
+echo "Building QuantLib C++ for WebAssembly..."
+if [ ! -d "${QL_SRC_DIR}" ]; then
+    echo "Error: QuantLib source directory not found at ${QL_SRC_DIR}"
+    exit 1
+fi
+
+QL_BUILD_DIR="${QL_BUILD_DIR:-${QL_SRC_DIR}/build-wasm}"
+QL_INSTALL_DIR="${QL_INSTALL_DIR:-${QL_BUILD_DIR}/install}"
+
+mkdir -p "${QL_BUILD_DIR}"
+emcmake cmake -B "${QL_BUILD_DIR}" -S "${QL_SRC_DIR}" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DQL_BUILD_EXAMPLES=OFF \
+    -DQL_BUILD_TEST_SUITE=OFF \
+    -DQL_BUILD_BENCHMARK=OFF \
+    -DCMAKE_UNITY_BUILD=ON \
+    -DCMAKE_UNITY_BUILD_BATCH_SIZE=16 \
+    -DBoost_INCLUDE_DIR="${BOOST_DIR}/include" \
+    -DCMAKE_INSTALL_PREFIX="${QL_INSTALL_DIR}" \
+    -DCMAKE_CXX_FLAGS="-fexceptions -O3 -DNDEBUG"
+
+cmake --build "${QL_BUILD_DIR}" --target install -j "${BUILD_JOBS}"
+
+if command -v swig &>/dev/null; then
+    echo "Generating SWIG wrappers..."
+    cd "${PYTHON_DIR}"
+    swig -python -c++ -outdir src/QuantLib -o src/QuantLib/quantlib_wrap.cpp ../SWIG/quantlib.i
+elif [ -f "${PYTHON_DIR}/src/QuantLib/quantlib_wrap.cpp" ]; then
+    echo "Using pre-existing SWIG wrappers"
+    cd "${PYTHON_DIR}"
+else
+    echo "Error: SWIG wrapper not found at ${PYTHON_DIR}/src/QuantLib/quantlib_wrap.cpp and swig is not installed."
+    exit 1
+fi
+
+echo "Building Python WASM wheel..."
+export PATH="${QL_INSTALL_DIR}/bin:$PATH"
+export CXXFLAGS="-I${BOOST_DIR}/include ${CXXFLAGS:-}"
+
+pyodide build --no-isolation --exports whole_archive
+
+# Ensure wheel is compatible with Pyodide 0.27 (emscripten_3_1_58)
+for f in "${PYTHON_DIR}/dist"/*cp312*pyemscripten*.whl; do
+    if [ -f "$f" ]; then
+        em_whl=$(echo "$f" | sed -E 's/pyemscripten_[0-9]+_[0-9]+/emscripten_3_1_58/g')
+        cp "$f" "$em_whl"
+    fi
+done
+
+echo "Successfully built QuantLib WASM wheel in ${PYTHON_DIR}/dist/"
