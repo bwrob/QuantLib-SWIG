@@ -8,7 +8,17 @@ PYTHON_DIR="${REPO_DIR}/Python"
 
 # Defaults
 QL_SRC_DIR="${QL_SRC_DIR:-${REPO_DIR}/../QuantLib}"
-BOOST_DIR="${BOOST_DIR:-$(brew --prefix boost 2>/dev/null || echo '/usr/local')}"
+if [ -z "${BOOST_DIR}" ]; then
+    if [ -d "/usr/include/boost" ]; then
+        BOOST_DIR="/usr"
+    elif [ -d "/usr/local/include/boost" ]; then
+        BOOST_DIR="/usr/local"
+    elif command -v brew &>/dev/null; then
+        BOOST_DIR="$(brew --prefix boost 2>/dev/null || echo '/usr/local')"
+    else
+        BOOST_DIR="/usr"
+    fi
+fi
 BUILD_JOBS="${BUILD_JOBS:-4}"
 # Activate virtual environment if present
 if [ -f "${REPO_DIR}/.venv/bin/activate" ]; then

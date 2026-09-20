@@ -1,0 +1,55 @@
+name: WebAssembly Python build
+on:
+  push:
+    branches:
+      - '**'
+    paths:
+      - 'Python/**'
+      - 'SWIG/**'
+      - '.ci/wasm/**'
+      - '.github/workflows/wasm.yml'
+  pull_request:
+    paths:
+      - 'Python/**'
+      - 'SWIG/**'
+      - '.ci/wasm/**'
+      - '.github/workflows/wasm.yml'
+  workflow_dispatch:
+
+jobs:
+  wasm-build:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v7
+    - name: Checkout QuantLib
+      uses: actions/checkout@v7
+      with:
+        repository: lballabio/QuantLib
+        path: QuantLib
+    - name: Setup system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libboost-dev swig
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: Install Pyodide build tools
+      run: |
+        pip install --upgrade pip
+        pip install pyodide-build build wheel
+        pyodide xbuildenv install
+    - name: Build and Test WASM
+      run: |
+        cd .ci/wasm
+        npm install
+        cd ../..
+        QL_SRC_DIR="${GITHUB_WORKSPACE}/QuantLib" bash .ci/wasm/build_wasm.sh
+        node .ci/wasm/test_wasm.mjs
+    - name: Save wheels as artifacts
+      uses: actions/upload-artifact@v7
+      with:
+        name: wheels-wasm-ci
+        path: ./Python/dist/*.whl

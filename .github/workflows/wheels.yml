@@ -406,9 +406,116 @@ jobs:
         name: wheels-nogil-linux-${{ matrix.image }}-${{ matrix.arch }}
         path: ./wheelhouse/*.whl
 
+  wheels-wasm:
+    runs-on: ubuntu-24.04
+    needs: detect-version
+    steps:
+    - uses: actions/checkout@v7
+    - name: Setup system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libboost-dev
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: Install Pyodide build tools
+      run: |
+        pip install --upgrade pip
+        pip install pyodide-build build wheel
+        pyodide xbuildenv install
+    - uses: actions/download-artifact@v8
+      with:
+        name: tarballs
+        path: .
+    - name: Unpack QuantLib and QuantLib-SWIG
+      run: |
+        tar xfz QuantLib-${{ needs.detect-version.outputs.version }}.tar.gz
+        tar xfz QuantLib-SWIG-${{ needs.detect-version.outputs.version }}.tar.gz
+    - name: Build QuantLib C++ for WebAssembly
+      run: |
+        VERSION="${{ needs.detect-version.outputs.version }}"
+        QL_DIR="${GITHUB_WORKSPACE}/QuantLib-${VERSION}"
+        QL_INSTALL_DIR="${GITHUB_WORKSPACE}/ql-wasm-install"
+
+        EMSDK_EMCMAKE=$(find ~/.cache/pyodide-build -name emcmake | head -n 1)
+        export PATH="$(dirname "${EMSDK_EMCMAKE}"):$PATH"
+
+        mkdir -p "${QL_DIR}/build-wasm"
+        emcmake cmake -B "${QL_DIR}/build-wasm" -S "${QL_DIR}" \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DBUILD_SHARED_LIBS=OFF \
+          -DQL_BUILD_EXAMPLES=OFF \
+          -DQL_BUILD_TEST_SUITE=OFF \
+          -DQL_BUILD_BENCHMARK=OFF \
+          -DCMAKE_UNITY_BUILD=ON \
+          -DCMAKE_UNITY_BUILD_BATCH_SIZE=16 \
+          -DBoost_INCLUDE_DIR="/usr/include" \
+          -DCMAKE_INSTALL_PREFIX="${QL_INSTALL_DIR}" \
+          -DCMAKE_CXX_FLAGS="-fexceptions -O3 -DNDEBUG"
+
+        cmake --build "${QL_DIR}/build-wasm" --target install -j $(nproc)
+    - name: Build QuantLib WASM wheel
+      run: |
+        VERSION="${{ needs.detect-version.outputs.version }}"
+        QL_INSTALL_DIR="${GITHUB_WORKSPACE}/ql-wasm-install"
+        WHEELHOUSE="${GITHUB_WORKSPACE}/wheelhouse"
+        mkdir -p "${WHEELHOUSE}"
+
+        cd "${GITHUB_WORKSPACE}/QuantLib-SWIG-${VERSION}/Python"
+        export PATH="${QL_INSTALL_DIR}/bin:$PATH"
+        export CXXFLAGS="-I/usr/include"
+
+        pyodide build --no-isolation --exports whole_archive --outdir "${WHEELHOUSE}"
+
+        # Ensure compatibility with both Pyodide 0.27 and newer pyemscripten tags
+        cd "${WHEELHOUSE}"
+        for f in *pyemscripten*.whl; do
+          if [ -f "$f" ]; then
+            cp "$f" "$(echo "$f" | sed -E 's/pyemscripten_[0-9]+_[0-9]+/emscripten_3_1_58/g')"
+          fi
+        done
+        ls -la "${WHEELHOUSE}"
+    - name: Verify WASM wheel
+      run: |
+        cd .ci/wasm
+        npm install
+        WHEELHOUSE="${GITHUB_WORKSPACE}/wheelhouse" node -e '
+        const { loadPyodide } = require("pyodide");
+        const fs = require("fs");
+        const path = require("path");
+        (async () => {
+          const wheelhouse = process.env.WHEELHOUSE || "../../wheelhouse";
+          const files = fs.readdirSync(wheelhouse).filter(f => f.endsWith(".whl"));
+          const preferred = files.find(f => f.includes("emscripten_3_1_58")) || files[0];
+          console.log("Testing wheel:", preferred);
+          const pyodide = await loadPyodide();
+          pyodide.FS.writeFile(`/${preferred}`, fs.readFileSync(path.join(wheelhouse, preferred)));
+          await pyodide.loadPackage("micropip");
+          const micropip = pyodide.pyimport("micropip");
+          await micropip.install(`emfs:/${preferred}`);
+          pyodide.runPython(`
+            import QuantLib as ql
+            print("QuantLib Version:", ql.__version__)
+            d = ql.Date(20, 9, 2026)
+            print("Date verification:", d)
+            c = ql.TARGET()
+            print("Is business day:", c.isBusinessDay(d))
+          `);
+          console.log("Verification passed!");
+        })();
+        '
+    - name: Save wheels as artifacts
+      uses: actions/upload-artifact@v7
+      with:
+        name: wheels-wasm
+        path: ./wheelhouse/*.whl
+
   test-publish:
     runs-on: ubuntu-latest
-    needs: [ wheels-macos, wheels-macos-nogil, wheels-windows, wheels-windows-nogil, wheels-linux, wheels-linux-nogil ]
+    needs: [ wheels-macos, wheels-macos-nogil, wheels-windows, wheels-windows-nogil, wheels-linux, wheels-linux-nogil, wheels-wasm ]
     environment: testpypi
     permissions:
       id-token: write
